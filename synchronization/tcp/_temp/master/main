@@ -1,0 +1,38 @@
+package main
+
+import (
+	"log"
+	"sync"
+	"time"
+)
+
+type Message struct {
+	MSG string `json:"msg"`
+}
+
+type Host struct {
+	IP     string `json:"ip"`
+	Port   int    `json:"port"`
+	Number int    `json:"number"`
+}
+
+var gMutex *sync.Mutex = &sync.Mutex{}
+
+var SyncedHosts []Host
+
+func main() {
+
+	// activate logging
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
+
+	go StartListen()
+
+	go Ping()
+
+	for {
+
+		log.Printf("%v\n", SyncedHosts)
+
+		time.Sleep(30 * time.Second)
+	}
+}

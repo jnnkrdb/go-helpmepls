@@ -1,0 +1,101 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"time"
+)
+
+type Message struct {
+	MSG string `json:"msg"`
+}
+
+type Host struct {
+	IP     string `json:"ip"`
+	Port   int    `json:"port"`
+	Number int    `json:"number"`
+}
+
+var (
+	thisHost = Host{
+		IP:     os.Getenv("IP"),
+		Port:   26125,
+		Number: 1,
+	}
+)
+
+func main() {
+	// activate logging
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Llongfile)
+	go func() {
+		for {
+			thisHost.Number++
+			log.Printf("new host.value: %d\n", thisHost.Number)
+			time.Sleep(5 * time.Second)
+		}
+	}()
+	go func() {
+		log.Printf("[TCP-SOCKET] starting: %s:%d\n", thisHost.IP, thisHost.Port)
+		if lstn, err := net.Listen("tcp", fmt.Sprintf(":%d", thisHost.Port)); err != nil {
+			log.Panic(err)
+		} else {
+			defer lstn.Close()
+			for {
+				if _c, err := lstn.Accept(); err != nil {
+					log.Printf("[TCP-SOCKET] error accept: %v\n", err)
+				} else {
+					go func(conn net.Conn) {
+						defer conn.Close()
+						var decoder = json.NewDecoder(conn)
+						var resp Message
+						if err := decoder.Decode(&resp); err != nil {
+							log.Printf("[TCP-SOCKET] error decoding to json: %v\n", err)
+						} else {
+							if resp.MSG == "!ping" {
+								resp.MSG = "pong"
+							}
+							if b, err := json.Marshal(resp); err != nil {
+								log.Printf("[TCP-SOCKET] error encoding to json: %v\n", err)
+							} else {
+								conn.Write(b)
+							}
+						}
+					}(_c)
+				}
+			}
+		}
+	}()
+	if tcpServer, err := net.ResolveTCPAddr("tcp", os.Getenv("TCPMASTERADDRESS")); err != nil {
+		log.Panic(err)
+	} else {
+		for {
+			if conn, err := net.DialTCP("tcp", nil, tcpServer); err != nil {
+				log.Printf("error dialing: %v\n", err)
+				time.Sleep(5 * time.Second)
+				continue
+			} else {
+				if js, err := json.Marshal(thisHost); err != nil {
+					log.Printf("error parsing json to bytes: %v\n", err)
+					time.Sleep(4 * time.Second)
+				} else {
+					if _, err = conn.Write(js); err != nil {
+						log.Printf("error sending msg[%v]: %v\n", thisHost, err)
+					} else {
+						var resp Message
+						var decoder = json.NewDecoder(conn)
+						if err = decoder.Decode(&resp); err != nil {
+							log.Printf("error reading response: %v\n", err)
+						} else {
+							log.Printf("tcpMaster message: %s\n", resp.MSG)
+						}
+					}
+				}
+				conn.Close()
+			}
+			time.Sleep(23 * time.Second)
+		}
+	}
+}

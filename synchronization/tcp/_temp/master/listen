@@ -1,0 +1,89 @@
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net"
+	"os"
+)
+
+func StartListen() {
+
+	if _host, err := os.Hostname(); err != nil {
+
+		log.Panic(err)
+
+	} else {
+
+		log.Printf("[TCP-SOCKET] starting: %s:5678\n", _host)
+
+		if lstn, err := net.Listen("tcp", ":5678"); err != nil {
+
+			log.Panic(err)
+
+		} else {
+
+			defer lstn.Close()
+
+			for {
+
+				if _c, err := lstn.Accept(); err != nil {
+
+					log.Printf("[TCP-SOCKET] error accept: %v\n", err)
+
+				} else {
+
+					go listen(_c)
+				}
+			}
+		}
+	}
+}
+
+func listen(conn net.Conn) {
+	gMutex.Lock()
+
+	var tmp Host
+	var decoder = json.NewDecoder(conn)
+	var resp Message
+	var inList bool = false
+
+	if err := decoder.Decode(&tmp); err != nil {
+
+		log.Printf("[TCP-SOCKET] error decoding to json: %v\n", err)
+
+		resp.MSG = "ERROR"
+	}
+
+	for i := range SyncedHosts {
+
+		if SyncedHosts[i].IP == tmp.IP {
+
+			SyncedHosts[i] = tmp
+
+			resp.MSG = "UPDATED"
+
+			inList = true
+		}
+	}
+
+	if !inList {
+
+		SyncedHosts = append(SyncedHosts, tmp)
+
+		resp.MSG = "INSERTED"
+	}
+
+	gMutex.Unlock()
+
+	if byt, err := json.Marshal(resp); err != nil {
+
+		conn.Write([]byte(`{"msg":"error decoding response json"}`))
+
+	} else {
+
+		conn.Write(byt)
+	}
+
+	conn.Close()
+}

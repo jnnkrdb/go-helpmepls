@@ -1,0 +1,62 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net"
+	"time"
+)
+
+func Ping() {
+
+	for {
+		time.Sleep(5 * time.Second)
+
+		var cacheNewHosts []Host
+		gMutex.Lock()
+
+		for _, h := range SyncedHosts {
+
+			tcpServer, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", h.IP, h.Port))
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			conn, err := net.DialTCP("tcp", nil, tcpServer)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			js, err := json.Marshal(Message{"!ping"})
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			if _, err = conn.Write(js); err != nil {
+				log.Println(err)
+				continue
+			}
+
+			var res Message
+			var decoder = json.NewDecoder(conn)
+
+			if err = decoder.Decode(&res); err != nil {
+				log.Println(err)
+				continue
+			}
+
+			if res.MSG == "pong" {
+				cacheNewHosts = append(cacheNewHosts, h)
+			}
+
+			conn.Close()
+		}
+
+		SyncedHosts = cacheNewHosts
+		gMutex.Unlock()
+	}
+}
